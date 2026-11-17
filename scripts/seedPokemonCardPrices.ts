@@ -11,7 +11,17 @@ function normalizeName(name: string): string {
 }
 
 function normalizeCardNumber(num: string): string {
-  return num.trim().toLowerCase();
+  if (!num || num.toLowerCase() === "none") return "none";
+  
+  const raw = num.trim();
+  const parts = raw.replace(/\s*\/\s*/g, "/").split("/");
+  
+  // Strip leading zeros from numerator (keeping any alpha prefix like "tg")
+  const cleanNum = parts[0]!!.toLowerCase().replace(/^([a-z]*)0+(\d+)$/, "$1$2");
+  // Strip leading zeros from denominator if present
+  const cleanDen = parts[1] ? parts[1].replace(/^0+(\d+)$/, "$1") : null;
+  
+  return cleanDen ? `${cleanNum}/${cleanDen}` : cleanNum;
 }
 
 async function seedDatabase() {

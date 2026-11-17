@@ -1,4 +1,3 @@
-import { TCGCSVClient } from "./client/tscgsvClient";
 import type { IPricingClient, TCGGroup, TCGPrice, TCGProduct } from "./client/types";
 
 

@@ -1,3 +1,5 @@
+import type { ParsedCardListing } from "../../../parser/types";
+
 export interface PokemonCardEntity {
   productId: number;
   name: string;
@@ -18,5 +20,5 @@ export interface PokemonCardEntity {
 export interface ICardRepository {
   upsertCards(cards: PokemonCardEntity[]): void;
   clearAll(): void;
-  findByCardNumberAndSet(cardNumber: string, setName: string, variant: string): PokemonCardEntity | null;
+  findMatch(parsed: ParsedCardListing): PokemonCardEntity | null;
 }
