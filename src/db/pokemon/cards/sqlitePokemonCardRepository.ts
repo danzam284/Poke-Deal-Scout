@@ -1,4 +1,3 @@
-import type { CardVariant, ParsedCardListing } from "../../../parser/types";
 import type { ICardRepository, PokemonCardEntity } from "./types";
 import { Database } from "bun:sqlite";
 
@@ -81,102 +80,54 @@ export class SQLiteCardRepository implements ICardRepository {
     insertMany(cards);
   }
 
-  public findMatch(parsed: ParsedCardListing): PokemonCardEntity | null {
-    if (!parsed.isValidSingleCard || !parsed.canonicalName) {
-      return null;
-    }
+  public findByNameBidirectional(cardName: string): PokemonCardEntity[] {
+  const clean = cardName.toLowerCase().trim();
+  if (!clean) return [];
 
-    const candidateVariants = this.getCandidateVariants(parsed.variant);
-    const hasCardNumber = parsed.cardNumber && parsed.cardNumber !== "none";
-    const cleanSetPattern = parsed.setName
-      ? `%${parsed.setName.toLowerCase().trim()}%`
-      : null;
+  const escaped = this.escapeLike(clean);
+  const listingPattern = `%${escaped}%`;
+  const dbLikePattern = `%${escaped}%`;
 
-    for (const variant of candidateVariants) {
-      // Tier 1: Exact name + card number + fuzzy set name + variant
-      if (hasCardNumber && cleanSetPattern) {
-        const row = this.db
-          .query(`
-            SELECT * FROM pokemon_cards
-            WHERE canonical_name = $name
-              AND (card_number = $number OR card_number LIKE $number || '/%')
-              AND LOWER(set_name) LIKE $setPattern
-              AND variant = $variant
-              AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
-            LIMIT 1;
-          `)
-          .get({
-            $name: parsed.canonicalName,
-            $number: parsed.cardNumber,
-            $setPattern: cleanSetPattern,
-            $variant: variant,
-          }) as Record<string, any> | null;
+  const rows = this.db
+    .query(`
+      SELECT * FROM pokemon_cards
+      WHERE (
+        LOWER(canonical_name) LIKE $listingPattern ESCAPE '\\'
+        OR $cleanName LIKE $dbLikePattern ESCAPE '\\'
+      )
+      AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
+    `)
+    .all({
+      $listingPattern: listingPattern,
+      $cleanName: clean,
+      $dbLikePattern: dbLikePattern,
+    }) as Record<string, any>[];
 
-        if (row) return this.mapRowToEntity(row);
-      }
+  return rows.map(this.mapRowToEntity);
+}
 
-      // Tier 2: Card number + fuzzy set name + variant (handles slight name variations like "Team Rocket's Meowth" vs "Meowth")
-      if (hasCardNumber && cleanSetPattern) {
-        const row = this.db
-          .query(`
-            SELECT * FROM pokemon_cards
-            WHERE card_number = $number
-              AND LOWER(set_name) LIKE $setPattern
-              AND variant = $variant
-              AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
-            LIMIT 1;
-          `)
-          .get({
-            $number: parsed.cardNumber,
-            $setPattern: cleanSetPattern,
-            $variant: variant,
-          }) as Record<string, any> | null;
+  public findByNumber(cardNumberNum: string): PokemonCardEntity[] {
+    const rows = this.db
+      .query(`
+        SELECT * FROM pokemon_cards
+        WHERE (LOWER(card_number) = LOWER($num) OR LOWER(card_number) LIKE LOWER($num) || '/%')
+          AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
+      `)
+      .all({ $num: cardNumberNum }) as Record<string, any>[];
 
-        if (row) return this.mapRowToEntity(row);
-      }
-
-      // Tier 3: Name + card number + variant (when seller omits the set name entirely)
-      if (hasCardNumber) {
-        const rows = this.db
-          .query(`
-            SELECT * FROM pokemon_cards
-            WHERE canonical_name = $name
-              AND card_number = $number
-              AND variant = $variant
-              AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
-            LIMIT 2;
-          `)
-          .all({
-            $name: parsed.canonicalName,
-            $number: parsed.cardNumber,
-            $variant: variant,
-          }) as Record<string, any>[];
-
-        // Only accept set-less match if unambiguous (1 unique productId)
-        const uniqueProductIds = new Set(rows.map((r) => r.product_id));
-        if (uniqueProductIds.size === 1) {
-          return this.mapRowToEntity(rows[0] || {});
-        }
-      }
-    }
-
-    return null;
+    return rows.map(this.mapRowToEntity);
   }
 
-  private getCandidateVariants(primary: CardVariant): string[] {
-    // Sellers rarely write "Unlimited Holofoil" or "Unlimited"—fall back automatically
-    switch (primary) {
-      case "Holofoil":
-        return ["Holofoil", "Unlimited Holofoil"];
-      case "Normal":
-        return ["Normal", "Unlimited"];
-      case "Unlimited Holofoil":
-        return ["Unlimited Holofoil", "Holofoil"];
-      case "Unlimited":
-        return ["Unlimited", "Normal"];
-      default:
-        return [primary];
-    }
+  public findBySetLike(setPattern: string): PokemonCardEntity[] {
+    const rows = this.db
+      .query(`
+        SELECT * FROM pokemon_cards
+        WHERE LOWER(set_name) LIKE LOWER($setPattern)
+          AND (market_price IS NOT NULL OR mid_price IS NOT NULL)
+      `)
+      .all({ $setPattern: setPattern }) as Record<string, any>[];
+
+    return rows.map(this.mapRowToEntity);
   }
 
   private mapRowToEntity(row: Record<string, any>): PokemonCardEntity {
@@ -197,4 +148,8 @@ export class SQLiteCardRepository implements ICardRepository {
       updatedAt: row.updated_at,
     };
   }
-};
+
+    private escapeLike(value: string): string {
+        return value.replace(/[\\%_]/g, "\\$&");
+    }
+}

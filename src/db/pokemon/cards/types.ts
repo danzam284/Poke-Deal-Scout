@@ -20,5 +20,8 @@ export interface PokemonCardEntity {
 export interface ICardRepository {
   upsertCards(cards: PokemonCardEntity[]): void;
   clearAll(): void;
-  findMatch(parsed: ParsedCardListing): PokemonCardEntity | null;
+
+  findByNameBidirectional(cardName: string): PokemonCardEntity[];
+  findByNumber(cardNumberNum: string): PokemonCardEntity[];
+  findBySetLike(setPattern: string): PokemonCardEntity[];
 }
